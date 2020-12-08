@@ -19,7 +19,7 @@ The recipe should list these requirements if needed.
 
 ## Recipes
 
-
+- [Build and deploy a stateless Kogito service](recipes/stateless-service)
 
 ## Further Reading
 
