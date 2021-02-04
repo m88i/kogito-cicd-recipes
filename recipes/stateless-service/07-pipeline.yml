@@ -1,0 +1,24 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: pipeline-build-project
+spec:
+  workspaces:
+  - name: local-maven-repo
+  resources:
+    - name: src
+      type: git
+  tasks:
+  - name: pipeline-build-project
+    taskRef:
+      name: build-project
+    params:
+      - name: directory
+        value: process-quarkus-example
+    resources:
+      inputs:
+        - name: src
+          resource: src
+    workspaces:
+    - name: maven-repo
+      workspace: local-maven-repo
