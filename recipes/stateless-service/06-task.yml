@@ -1,0 +1,111 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: build-project
+spec:
+  workspaces:
+  - name: maven-repo
+  inputs:
+    params:
+    - name: directory
+      default: .
+    - name: cache
+      default: empty-dir-volume
+    resources:
+    - name: src
+      type: git
+  steps:
+   - name: set-source-permissions
+     image: bash
+     command:
+     - chmod
+     - -R
+     - a+w
+     - .
+     workingDir: /workspace/src/$(inputs.params.directory)
+   - name: build-package
+     image: quay.io/quarkus/centos-quarkus-maven:20.1.0-java11
+     command:
+     - mvn
+     - clean
+     - package
+     - -Dquarkus.package.uber-jar
+     - -Dmaven.repo.local=$(workspaces.maven-repo.path)
+     workingDir: /workspace/src/$(inputs.params.directory)
+   - name: build-image
+     image: quay.io/openshift-pipeline/s2i
+     command:
+     - s2i 
+     - build 
+     - target/
+     - quay.io/kiegroup/kogito-quarkus-jvm-ubi8:latest 
+     - process-quarkus-example
+     workingDir: /workspace/src/$(inputs.params.directory)
+     volumeMounts:
+     - name: $(inputs.params.cache)
+       mountPath: /builder/home/.m2
+       subPath: m2-cache
+     - name: dind-socket
+       mountPath: /var/run/
+   - name: tag-image
+     image: docker:18.05-dind
+     command:
+     - docker 
+     - tag
+     - process-quarkus-example
+     - quay.io/mmagnani/process-quarkus-example
+     volumeMounts:
+     - name: dind-socket
+       mountPath: /var/run/
+   - name: quay-login
+     image: docker:18.05-dind
+     command:
+     - docker 
+     - login
+     - -u=myuser
+     - -p=mypass
+     - quay.io
+     workingDir: /workspace/src/$(inputs.params.directory)
+     volumeMounts:
+     - name: dind-socket
+       mountPath: /var/run/
+   - name: push-image
+     image: docker:18.05-dind
+     command:
+     - docker 
+     - push
+     - quay.io/mmagnani/process-quarkus-example
+     workingDir: /workspace/src/$(inputs.params.directory)
+     volumeMounts:
+     - name: dind-socket
+       mountPath: /var/run/
+   - name: deploy-image
+     image: quay.io/rhdevelopers/tutorial-tools:0.0.4
+     command:
+     - kubectl 
+     - apply
+     - -f
+     - https://raw.githubusercontent.com/msmagnanijr/kogito-tmp-recipes/main/process-quarkus-example.yml
+     - -n
+     - kogito-recipes 
+     workingDir: /workspace/src/$(inputs.params.directory)
+     volumeMounts:
+     - name: dind-socket
+       mountPath: /var/run/
+  sidecars:
+    - image: docker:18.05-dind
+      name: server
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - mountPath: /var/lib/docker
+          name: dind-storage
+        - mountPath: /var/run/
+          name: dind-socket
+  volumes:
+  - name: empty-dir-volume
+    emptyDir: {}
+  - name: dind-storage
+    emptyDir: {}
+  - name: dind-socket
+    emptyDir: {}
